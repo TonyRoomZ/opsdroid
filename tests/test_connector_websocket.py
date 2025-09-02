@@ -1,48 +1,47 @@
-import unittest
-import asyncio
+import pytest
+import json
 
-import asynctest
-import asynctest.mock as amock
+from unittest import TestCase
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from aiohttp.web import HTTPUnauthorized
 
 from opsdroid.cli.start import configure_lang
+from opsdroid.connector.websocket import ConnectorWebsocket, WebsocketMessage
 from opsdroid.core import OpsDroid
-from opsdroid.connector.websocket import ConnectorWebsocket
 from opsdroid.events import Message
-from opsdroid.cli.start import configure_lang
+
+pytestmark = pytest.mark.anyio
 
 
-class TestConnectorWebsocket(unittest.TestCase):
-    """Test the opsdroid Websocket connector class."""
-
-    def setUp(self):
-        self.loop = asyncio.new_event_loop()
-        configure_lang({})
-
-    def test_init(self):
-        connector = ConnectorWebsocket({}, opsdroid=OpsDroid())
-        self.assertEqual(None, connector.default_target)
-        self.assertEqual("websocket", connector.name)
-
-    def test_property(self):
-        connector = ConnectorWebsocket({}, opsdroid=OpsDroid())
-        self.assertEqual("websocket", connector.name)
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 
 
-class TestConnectorWebsocketAsync(asynctest.TestCase):
+class TestConnectorWebsocketAsync(TestCase):
     """Test the async methods of the opsdroid Websocket connector class."""
 
     async def setUp(self):
         configure_lang({})
 
+    async def test_init(self):
+        connector = ConnectorWebsocket({}, opsdroid=OpsDroid())
+        self.assertEqual(None, connector.default_target)
+        self.assertEqual("websocket", connector.name)
+
+    async def test_property(self):
+        connector = ConnectorWebsocket({}, opsdroid=OpsDroid())
+        self.assertEqual("websocket", connector.name)
+
     async def test_connect(self):
         """Test the connect method adds the handlers."""
-        opsdroid = amock.CoroutineMock()
+        opsdroid = AsyncMock()
         connector = ConnectorWebsocket({}, opsdroid=opsdroid)
-        opsdroid.web_server = amock.CoroutineMock()
-        opsdroid.web_server.web_app = amock.CoroutineMock()
-        opsdroid.web_server.web_app.router = amock.CoroutineMock()
-        opsdroid.web_server.web_app.router.add_get = amock.CoroutineMock()
-        opsdroid.web_server.web_app.router.add_post = amock.CoroutineMock()
+        opsdroid.web_server = AsyncMock()
+        opsdroid.web_server.web_app = AsyncMock()
+        opsdroid.web_server.web_app.router = AsyncMock()
+        opsdroid.web_server.web_app.router.add_get = AsyncMock()
+        opsdroid.web_server.web_app.router.add_post = AsyncMock()
 
         await connector.connect()
 
@@ -54,12 +53,12 @@ class TestConnectorWebsocketAsync(asynctest.TestCase):
         connector = ConnectorWebsocket({}, opsdroid=OpsDroid())
 
         connector.active_connections = {
-            "connection1": amock.CoroutineMock(),
-            "connection2": amock.CoroutineMock(),
+            "connection1": AsyncMock(),
+            "connection2": AsyncMock(),
         }
 
-        connector.active_connections["connection1"].close = amock.CoroutineMock()
-        connector.active_connections["connection2"].close = amock.CoroutineMock()
+        connector.active_connections["connection1"].close = AsyncMock()
+        connector.active_connections["connection2"].close = AsyncMock()
 
         await connector.disconnect()
 
@@ -75,12 +74,14 @@ class TestConnectorWebsocketAsync(asynctest.TestCase):
         connector.max_connections = 1
         self.assertEqual(len(connector.available_connections), 0)
 
-        response = await connector.new_websocket_handler(None)
+        mocked_request = Mock()
+
+        response = await connector.new_websocket_handler(mocked_request)
         self.assertTrue(isinstance(response, aiohttp.web.Response))
         self.assertEqual(len(connector.available_connections), 1)
         self.assertEqual(response.status, 200)
 
-        fail_response = await connector.new_websocket_handler(None)
+        fail_response = await connector.new_websocket_handler(mocked_request)
         self.assertTrue(isinstance(fail_response, aiohttp.web.Response))
         self.assertEqual(fail_response.status, 429)
 
@@ -100,8 +101,8 @@ class TestConnectorWebsocketAsync(asynctest.TestCase):
             self.assertTrue(opsdroid.__class__.instances)
             connector = ConnectorWebsocket({}, opsdroid=opsdroid)
             room = "a146f52c-548a-11e8-a7d1-28cfe949e12d"
-            connector.active_connections[room] = amock.CoroutineMock()
-            connector.active_connections[room].send_str = amock.CoroutineMock()
+            connector.active_connections[room] = AsyncMock()
+            connector.active_connections[room].send_str = AsyncMock()
             test_message = Message(
                 text="Hello world", user="Alice", target=room, connector=connector
             )
@@ -120,29 +121,30 @@ class TestConnectorWebsocketAsync(asynctest.TestCase):
 
     async def test_websocket_handler(self):
         """Test the websocket handler."""
-        import aiohttp
         from datetime import datetime, timedelta
+
+        import aiohttp
 
         connector = ConnectorWebsocket({}, opsdroid=OpsDroid())
         room = "a146f52c-548a-11e8-a7d1-28cfe949e12d"
-        mock_request = amock.Mock()
-        mock_request.match_info = amock.Mock()
-        mock_request.match_info.get = amock.Mock()
+        mock_request = Mock()
+        mock_request.match_info = Mock()
+        mock_request.match_info.get = Mock()
         mock_request.match_info.get.return_value = room
         connector.available_connections = [{"id": room, "date": datetime.now()}]
 
-        with OpsDroid() as opsdroid, amock.patch(
-            "aiohttp.web.WebSocketResponse", new=asynctest.MagicMock()
+        with OpsDroid() as opsdroid, patch(
+            "aiohttp.web.WebSocketResponse", new=MagicMock()
         ) as mock_WebSocketResponse:
             connector.opsdroid = opsdroid
-            connector.opsdroid.parse = amock.CoroutineMock()
-            mock_socket = asynctest.MagicMock()
-            mock_socket.prepare = amock.CoroutineMock()
-            mock_socket.exception = amock.CoroutineMock()
-            socket_message_1 = amock.CoroutineMock()
+            connector.opsdroid.parse = AsyncMock()
+            mock_socket = MagicMock()
+            mock_socket.prepare = AsyncMock()
+            mock_socket.exception = AsyncMock()
+            socket_message_1 = AsyncMock()
             socket_message_1.type = aiohttp.WSMsgType.TEXT
             socket_message_1.data = "Hello world!"
-            socket_message_2 = amock.CoroutineMock()
+            socket_message_2 = AsyncMock()
             socket_message_2.type = aiohttp.WSMsgType.ERROR
             socket_message_2.data = "Error!"
             mock_socket.__aiter__.return_value = [socket_message_1, socket_message_2]
@@ -166,3 +168,46 @@ class TestConnectorWebsocketAsync(asynctest.TestCase):
             self.assertEqual(type(response), aiohttp.web.Response)
             self.assertEqual(response.status, 408)
             self.assertFalse(connector.available_connections)
+
+
+def test_ConnectorMessage_dataclass():
+    payload = json.dumps({"message": "Hello, world!", "user": "Bob", "socket": "12345"})
+    data = WebsocketMessage.parse_payload(payload)
+
+    assert data.message == "Hello, world!"
+    assert data.user == "Bob"
+    assert data.socket == "12345"
+
+    text_message = WebsocketMessage.parse_payload("Hello, world!")
+    assert text_message.message == "Hello, world!"
+    assert text_message.user is None
+    assert text_message.socket is None
+
+
+@pytest.mark.anyio
+async def test_validate_request():
+    config = {"token": "secret"}
+    connector = ConnectorWebsocket(config, opsdroid=OpsDroid())
+
+    request = AsyncMock()
+    request.headers = {"Authorization": "secret"}
+
+    is_valid = await connector.validate_request(request)
+    assert is_valid
+
+    request = AsyncMock()
+    request.headers = {}
+
+    with pytest.raises(HTTPUnauthorized):
+        await connector.validate_request(request)
+
+
+@pytest.mark.anyio
+async def test_new_websocket_handler_no_token():
+    config = {"token": "secret"}
+    connector = ConnectorWebsocket(config, opsdroid=OpsDroid())
+
+    with pytest.raises(HTTPUnauthorized):
+        request = AsyncMock()
+        request.headers = {}
+        await connector.new_websocket_handler(request)

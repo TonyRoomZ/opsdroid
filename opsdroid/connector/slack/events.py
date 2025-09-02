@@ -1,12 +1,11 @@
 """Classes to describe different kinds of Slack specific event."""
 
 import json
-import aiohttp
-import ssl
-import certifi
 import logging
-from collections import defaultdict
+import ssl
 
+import aiohttp
+import certifi
 from opsdroid import events
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,8 +46,17 @@ class Blocks(events.Message):
         super().__init__("", *args, **kwargs)
 
         self.blocks = blocks
+
         if isinstance(self.blocks, list):
             self.blocks = json.dumps(self.blocks)
+
+
+class EditedBlocks(Blocks):
+    """A  `Blocks` slack instance which has been edited.
+
+    The ``linked_event`` property should hold Time Stamp (ts) of the Block
+    to be edited
+    """
 
 
 class InteractiveAction(events.Event):
@@ -67,20 +75,28 @@ class InteractiveAction(events.Event):
             if "response_url" in self.payload:
                 async with aiohttp.ClientSession() as session:
                     headers = {"Content-Type": "application/json"}
+                    response_data = {
+                        "text": response_event,
+                        "replace_original": False,
+                        "delete_original": False,
+                        "response_type": "in_channel",
+                    }
+                    if "message" in self.payload and self.connector.start_thread:
+                        if "thread_ts" in self.payload["message"]:
+                            response_data["thread_ts"] = self.payload["message"][
+                                "thread_ts"
+                            ]
                     response = await session.post(
                         self.payload["response_url"],
-                        data=json.dumps(
-                            {
-                                "text": response_event,
-                                "replace_original": False,
-                                "delete_original": False,
-                                "response_type": "in_channel",
-                            }
-                        ),
+                        data=json.dumps(response_data),
                         headers=headers,
                         ssl=self.ssl_context,
                     )
-                    response_txt = await response.json()
+
+                    if response.content_type == "application/json":
+                        response_txt = await response.json()
+                    elif response.content_type == "text/html":
+                        response_txt = await response.text()
             else:
                 response_txt = {"error": "Response URL not available in payload."}
         else:
@@ -105,6 +121,93 @@ class MessageAction(InteractiveAction):
         super().__init__(payload, *args, **kwargs)
 
 
+class Modal(events.Event):
+    """Base Event class to represent a Modal in Slack.
+
+    Modals are the Slack app equivalent of alert boxes, pop-ups, or dialog boxes.
+    https://api.slack.com/surfaces/modals/using
+
+    args:
+        view: a view payload. this can be a dict or a json encoded string
+    """
+
+    def __init__(self, view, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.view = view
+
+        if isinstance(self.view, dict):
+            self.view = json.dumps(self.view)
+
+
+class ModalOpen(Modal):
+    """Event class to represent a new Modal in Slack.
+
+    args:
+        trigger_id: trigger to post to a user
+
+    **Basic Usage in a Skill:**
+
+    .. code-block:: python
+
+        from opsdroid.skill import Skill
+        from opsdroid.matchers import match_event
+
+        class ModalSkill(Skill):
+            @match_event(SlashCommand, command="/testcommand")
+            async def open_modal(self, event):
+                view = {
+                    "type": "modal",
+                    "title": {"type": "plain_text", "text": "Modal title"},
+                    "blocks": [
+                        {
+                            "type": "input",
+                            "label": {"type": "plain_text", "text": "Input label"},
+                            "element": {
+                                "type": "plain_text_input",
+                                "action_id": "input1",
+                                "placeholder": {
+                                    "type": "plain_text",
+                                    "text": "Type in here",
+                                },
+                                "multiline": False,
+                            },
+                            "optional": False,
+                        },
+                    ],
+                    "close": {"type": "plain_text", "text": "Cancel"},
+                    "submit": {"type": "plain_text", "text": "Save"},
+                    "private_metadata": "Shhhhhhhh",
+                    "callback_id": "view_identifier_12",
+                }
+                await self.opsdroid.send(
+                    ModalOpen(view=view, trigger_id=event.payload["trigger_id"])
+                )
+    """
+
+    def __init__(self, trigger_id, view, *args, **kwargs):
+        super().__init__(view, *args, **kwargs)
+        self.trigger_id = trigger_id
+
+
+class ModalUpdate(Modal):
+    """Event class to represent a Modal Update in Slack
+
+    args:
+        external_id: A unique identifier of the view set by the developer
+        _hash: A string that represents view state to protect against possible race conditions
+    """
+
+    def __init__(self, external_id, view, *args, hash_=None, **kwargs):
+        self.external_id = external_id
+        self.hash = hash_
+        super().__init__(view, *args, **kwargs)
+
+
+class ModalPush(ModalOpen):
+    """Event class to represent a Modal Push in Slack."""
+
+
 class ViewSubmission(InteractiveAction):
     """Event class to represent view_submission in Slack."""
 
@@ -116,9 +219,32 @@ class ViewSubmission(InteractiveAction):
 class ViewClosed(InteractiveAction):
     """Event class to represent view_closed in Slack."""
 
-    def __init__(self, payload, *args, **kwargs):
-        """Create object with minimum properties."""
-        super().__init__(payload, *args, **kwargs)
+
+class SlashCommand(InteractiveAction):
+    """
+    Event class to represent a slash command.
+
+    args:
+        payload: Incomming payload from the Slack API
+
+    **Basic Usage in a Skill:**
+
+    .. code-block:: python
+
+        from opsdroid.skill import Skill
+        from opsdroid.matchers import match_event
+
+        class CommandsSkill(Skill):
+            @match_event(SlashCommand, command="/testcommand")
+            async def slash_command(self, event):
+
+                cmd = event.payload["command"]
+
+                # event.payload["text"] holds the arguments from the command
+                arguments = event.payload["text"]
+
+                await message.respond(f"{cmd} {arguments}")
+    """
 
 
 class ChannelArchived(events.Event):
@@ -127,207 +253,3 @@ class ChannelArchived(events.Event):
 
 class ChannelUnarchived(events.Event):
     """Event for when a slack channel is unarchived."""
-
-
-def slack_to_creator(f):
-    """Wrap a callback so that RTMClient can work."""
-
-    async def wrapper(self, **kwargs):
-        event = kwargs["data"]
-        _LOGGER.debug(f"Got slack event: {event}")
-        channel = event.get("channel", None)
-        event = await f(self, event, channel)
-        if event is not None:
-            return await self.connector.opsdroid.parse(event)
-
-    return wrapper
-
-
-class SlackEventCreator(events.EventCreator):
-    """Create opsdroid events from Slack ones."""
-
-    def __init__(self, connector, *args, **kwargs):
-        """Initialise the event creator."""
-        super().__init__(connector, *args, **kwargs)
-        self.connector = connector
-
-        # Things for managing various types of message
-        self.connector.slack_rtm.on(event="message", callback=self.create_room_message)
-        self.connector.slack_rtm.on(
-            event="channel_created", callback=self.create_newroom
-        )
-        self.connector.slack_rtm.on(event="channel_archive", callback=self.archive_room)
-        self.connector.slack_rtm.on(
-            event="channel_unarchive", callback=self.unarchive_room
-        )
-        self.connector.slack_rtm.on(event="team_join", callback=self.create_join_group)
-        self.connector.slack_rtm.on(
-            event="channel_rename", callback=self.channel_name_changed
-        )
-        self.connector.slack_rtm.on(event="pin_added", callback=self.message_pinned)
-        self.connector.slack_rtm.on(event="pin_removed", callback=self.message_unpinned)
-
-        self.message_subtypes = defaultdict(lambda: self.create_message)
-        self.message_subtypes.update(
-            {
-                "message": self.create_message,
-                "bot_message": self.handle_bot_message,
-                "message_changed": self.handle_edit,
-                "channel_topic": self.topic_changed,
-            }
-        )
-
-    async def create_event(self, event, target):
-        """Not Implemented."""
-        # We don't use this, as we use the RTM client instead.
-        # It's implemented in the base class though, so do this to be safe.
-        raise NotImplementedError(
-            "This method is not used with slack. Use connector.slack_rtm._dispatch_event() instead"
-        )
-
-    @slack_to_creator
-    async def create_room_message(self, event, channel):
-        """Dispatch a message event of arbitrary subtype."""
-        channel = event["channel"]
-        msgtype = event["subtype"] if "subtype" in event.keys() else "message"
-        return await self.message_subtypes[msgtype](event, channel)
-
-    async def _get_user_name(self, event):
-        try:
-            user_info = await self.connector.lookup_username(event["user"])
-        except (ValueError, KeyError) as error:
-            _LOGGER.error(_("Username lookup failed for %s."), error)
-            return
-        return user_info["name"]
-
-    async def create_message(self, event, channel, user_name=None):
-        """Send a Message event."""
-
-        if user_name is None:
-            user_name = await self._get_user_name(event)
-
-        if user_name is None:
-            return
-
-        _LOGGER.debug("Replacing userids in message with usernames")
-        text = await self.connector.replace_usernames(event["text"])
-
-        return events.Message(
-            text,
-            user=user_name,
-            user_id=event["user"],
-            target=channel,
-            connector=self.connector,
-            event_id=event["ts"],
-            raw_event=event,
-        )
-
-    async def handle_bot_message(self, event, channel):
-        """Check that a bot message isn't us then create the message."""
-        # TODO: Add a bot_id lookup here to get the display name of the bot and
-        # pass it through to create_message
-        if event["bot_id"] != self.connector.bot_id:  # pragma: nocover
-            return await self.create_message(event, channel)
-
-    @slack_to_creator
-    async def create_newroom(self, event, channel):
-        """Send a NewRoom event."""
-        user_id = event["channel"]["creator"]
-        user_info = await self.connector.lookup_username(user_id)
-
-        name = event["channel"].get("name_normalized", event["channel"].get("name"))
-        return events.NewRoom(
-            name=name,
-            params=None,
-            user=user_info["name"],
-            user_id=user_id,
-            target=event["channel"]["id"],
-            connector=self.connector,
-            event_id=event["event_ts"],
-            raw_event=event,
-        )
-
-    @slack_to_creator
-    async def archive_room(self, event, channel):
-        """Send a ChannelArchived event."""
-        return ChannelArchived(
-            target=channel,
-            connector=self.connector,
-            event_id=event["event_ts"],
-            raw_event=event,
-        )
-
-    @slack_to_creator
-    async def unarchive_room(self, event, channel):
-        """Send a ChannelUnarchived event."""
-        return ChannelUnarchived(
-            target=channel,
-            connector=self.connector,
-            event_id=event["event_ts"],
-            raw_event=event,
-        )
-
-    @slack_to_creator
-    async def create_join_group(self, event, channel):
-        """Send a JoinGroup event."""
-        user_info = await self.connector.lookup_username(event["user"]["id"])
-        return events.JoinGroup(
-            target=event["user"]["team_id"],
-            connector=self.connector,
-            event_id=event["event_ts"],
-            raw_event=event,
-            user_id=event["user"]["id"],
-            user=user_info["name"],
-        )
-
-    async def handle_edit(self, event, channel):
-        """Not Implemented."""
-        # TODO: Make this return an EditedMessage event
-        return
-
-    @slack_to_creator
-    async def channel_name_changed(self, event, channel):
-        """Send a RoomName event."""
-        return events.RoomName(
-            name=channel["name"],
-            target=channel["id"],
-            connector=self.connector,
-            event_id=event["event_ts"],
-            raw_event=event,
-        )
-
-    @slack_to_creator
-    async def message_pinned(self, event, channel):
-        """Send a PinMessage event."""
-        # Note that the pin_added event in slack doesn't have a "channel" keyword.
-        return events.PinMessage(
-            linked_event=event["item"],
-            target=event["channel_id"],
-            connector=self.connector,
-            event_id=event["event_ts"],
-            raw_event=event,
-        )
-
-    @slack_to_creator
-    async def message_unpinned(self, event, channel):
-        """Send an UnpinMessage event."""
-        # Note that the pin_removed event in slack doesn't have a "channel" keyword.
-        return events.UnpinMessage(
-            linked_event=event["item"],
-            target=event["channel_id"],
-            connector=self.connector,
-            event_id=event["event_ts"],
-            raw_event=event,
-        )
-
-    async def topic_changed(self, event, channel):
-        """Send a RoomDescription event."""
-        _LOGGER.debug(_("New description: %s"), event["topic"])
-        _LOGGER.debug(_("Target channel: %s"), event["channel"])
-        return events.RoomDescription(
-            description=event["topic"],
-            target=channel,
-            connector=self.connector,
-            event_id=event["event_ts"],
-            raw_event=event,
-        )

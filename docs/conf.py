@@ -4,9 +4,6 @@
 # list see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-from recommonmark.parser import CommonMarkParser
-from recommonmark.transform import AutoStructify
-
 # -- Path setup --------------------------------------------------------------
 
 # If extensions (or modules to document with autodoc) are in another directory,
@@ -21,7 +18,7 @@ from recommonmark.transform import AutoStructify
 # -- Project information -----------------------------------------------------
 
 project = "opsdroid"
-copyright = "2019, opsdroid contributors"
+copyright = "2020, opsdroid contributors"
 author = "opsdroid contributors"
 
 
@@ -34,7 +31,28 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
     "sphinx_click.ext",
+    "sphinx_autodoc_typehints",
+    "myst_parser",
+]
+
+myst_enable_extensions = [
+    "amsmath",
+    "attrs_inline",
+    "attrs_block",
+    "colon_fence",
+    "deflist",
+    "dollarmath",
+    "fieldlist",
+    "html_admonition",
+    "html_image",
+    "linkify",
+    "replacements",
+    "smartquotes",
+    "strikethrough",
+    "substitution",
+    "tasklist",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -45,6 +63,12 @@ templates_path = ["_templates"]
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 
+# Mappings for intersphinx
+intersphinx_mapping = {"aiohttp": ("https://docs.aiohttp.org/en/stable/", None)}
+
+# The reST default role (used for this markup: `text`) to use for all
+# documents. Set to the "smart" one.
+default_role = "obj"
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -64,20 +88,4 @@ html_theme_options = {
     "code_font_family": "'Fira Code', monospace",
 }
 
-# -- Recommonmark ------------------------------------------------------------
-
-github_doc_root = "https://github.com/rtfd/recommonmark/tree/master/doc/"
-
-
-def setup(app):
-    app.add_config_value(
-        "recommonmark_config",
-        {
-            "url_resolver": lambda url: github_doc_root + url,
-            "auto_toc_tree_section": "Contents",
-        },
-        True,
-    )
-    app.add_transform(AutoStructify)
-    app.add_source_suffix(".md", "markdown")
-    app.add_source_parser(CommonMarkParser)
+autodoc_mock_imports = ["jwt", "motor"]

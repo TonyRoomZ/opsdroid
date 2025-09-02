@@ -1,7 +1,6 @@
 # Configuration
 
-```eval_rst
-.. contents::
+```{contents}
 ```
 
 ## Config file
@@ -9,26 +8,26 @@
 For configuration, opsdroid uses a single YAML file named `configuration.yaml`. When you run opsdroid it will look for the file in the following places in order:
 
 - Local `./configuration.yaml`
--  The default user data location:
-    * Mac: `~/Library/Application Support/opsdroid`
-    * Linux: `~/.local/share/opsdroid`
-    * Windows: `C:\Documents and Settings\<User>\Application Data\Local Settings\opsdroid\opsdroid` or
-                `C:\Documents and Settings\<User>\Application Data\opsdroid\opsdroid`
-- System `/etc/opsdroid/configuration.yaml` (*nix only)
+- The default user data location:
+  - Mac: `~/Library/Application Support/opsdroid`
+  - Linux: `~/.local/share/opsdroid`
+  - Windows: `C:\Documents and Settings\<User>\Application Data\Local Settings\opsdroid\opsdroid` or
+    `C:\Documents and Settings\<User>\Application Data\opsdroid\opsdroid`
+- System `/etc/opsdroid/configuration.yaml` (\*nix only)
 
-_Note: If no file named `configuration.yaml` can be found on one of these folders one will be created for you taken from the [example configuration file](https://github.com/opsdroid/opsdroid/blob/master/opsdroid/configuration/example_configuration.yaml)_
+_Note: If no file named `configuration.yaml` can be found on one of these folders, one will be created for you taken from the [example configuration file](https://github.com/opsdroid/opsdroid/blob/master/opsdroid/configuration/example_configuration.yaml)_
 
-If you are using one of the default locations you can run the command `opsdroid config edit` to open the configuration with your favorite editor (taken from the environment variable `EDITOR`) or the default editor vim.
+Suppose you are using one of the default locations. In that case, you can run the command `opsdroid config edit` to open the configuration with your favourite editor (taken from the environment variable `EDITOR`) or the default editor vim.
 
-The opsdroid project itself is very simple and requires modules to give it functionality. In your configuration file, you must specify the connector, skill, and database* modules you wish to use and any options they may require.
+The opsdroid project itself is very simple and requires modules to give it functionality. You must specify the connector, skill, and database\* modules you wish to use in your configuration file and any options they may require.
 
 **Connectors** are modules for connecting opsdroid to your specific chat service.
 
-**Skills** are modules which define what actions opsdroid should perform based on different chat messages.
+**Skills** are modules that define what actions opsdroid should perform based on different chat messages.
 
 **Database** modules connect opsdroid to your chosen database and allow skills to store information between messages.
 
-For example, a simple barebones configuration would look like:
+For example, a simple barebones configuration would look like this:
 
 ```yaml
 connectors:
@@ -70,15 +69,14 @@ Configuration options such as the `token` in the slack connector or the `host`, 
 
 ### Connector Modules
 
-Opsdroid comes with some built-in connectors out of the box. A connector is a module which is either installed as a plugin or built-in that connects opsdroid to a specific chat service.
+Opsdroid comes with some built-in connectors out of the box. A connector is a module that is either installed as a plugin or built-in that connects opsdroid to a specific chat service.
 
 The built-in connectors are:
 
-```eval_rst
-.. toctree::
-   :maxdepth: 2
+```{toctree}
+:maxdepth: 2
 
-   connectors/index
+connectors/index
 ```
 
 _Note: More connectors will be added as built-in connectors into the opsdroid core over time._
@@ -87,7 +85,6 @@ _Config options of the connectors themselves differ between connectors, see the 
 
 ```yaml
 connectors:
-
   slack:
     token: "mysecretslacktoken"
 
@@ -111,26 +108,25 @@ connectors:
     typing-delay: <int, float or two element list>
 ```
 
-_Note: As expected this will cause a delay on opsdroid time of response so make sure you don't pass a high number._
+_Note: As expected, this will cause a delay on opsdroid time of response so make sure you don't pass a high number._
 
 See [module options](#module-options) for installing custom connectors.
 
 ### Database Modules
 
-Opsdroid comes with some built-in databases out of the box. Databases are modules which connect opsdroid to a persistent data storage service.
+Opsdroid comes with some built-in databases out of the box. Databases are modules that connect opsdroid to a persistent data storage service.
 
 Skills can store data in opsdroid's "memory", this is a dictionary which can be persisted in an external database.
 
 The built-in databases are:
 
-```eval_rst
-.. toctree::
-   :maxdepth: 2
+```{toctree}
+:maxdepth: 2
 
-   databases/index
+databases/index
 ```
 
-_Config options of the databases themselves differ between databases, see the database documentation for details._
+_Config options of the databases themselves differ between databases. See the database documentation for details._
 
 ```yaml
 databases:
@@ -146,7 +142,7 @@ See [module options](#module-options) for installing custom databases.
 
 Configure the welcome message.
 
-If set to true then a welcome message is printed in the log at startup. It defaults to true.
+If set to true, then a welcome message is printed in the log at startup. It defaults to true.
 
 ```yaml
 welcome-message: true
@@ -154,7 +150,7 @@ welcome-message: true
 
 ### Logging
 
-Configure logging in opsdroid.
+Configure logging in opsdroid. If you don't have logging settings configured, opsdroid will use rich logging.
 
 Setting `path` will configure where opsdroid writes the log file to. This location must be writable by the user running opsdroid. Setting this to `false` will disable log file output.
 
@@ -162,7 +158,7 @@ _Note: If you forget to declare a path for the logs but have logging active, one
 
 All python logging levels are available in opsdroid. `level` can be set to `debug`, `info`, `warning`, `error` and `critical`.
 
-You may not want opsdroid to log to the console, for example, if you are using the shell connector. However, if running in a container you may want exactly that. Setting `console` to `true` or `false` will enable or disable console logging.
+You may not want opsdroid to log to the console, for example, using the shell connector. However, if running in a container, you may want exactly that. Setting `rich: false` will log only critial level logs, removing any of the other logs.
 
 The default locations for the logs are:
 
@@ -170,13 +166,14 @@ The default locations for the logs are:
 - Linux: `/home/<User>/.cache/opsdroid/log`
 - Windows: `C:\Users\<User>\AppData\Local\opsdroid\Logs\`
 
-If you are using one of the default paths for your log you can run the command `opsdroid logs` to print the logs into the terminal. 
+If you are using one of the default paths for your log, you can run the command `opsdroid logs` to print the logs into the terminal.
 
 ```yaml
 logging:
   level: info
   path: ~/.opsdroid/output.log
-  console: true
+  rich: true
+  console: false
 
 connectors:
   shell: {}
@@ -186,12 +183,50 @@ skills:
   seen: {}
 ```
 
+#### Rich logging
+
+When using rich logging, opsdroid will use the [RichHandler](https://rich.readthedocs.io/en/stable/logging.html) from the Rich library. These logs will contain a timestap, log location (file and line number) and will show different colours depending on which level the log was set. You can use some options to disable some of these things.
+
+- set `timestamp: false` to disable timestamps
+- set `extended: false` to disable log location
+
+##### Automatic fallback
+
+Opsdroid will fall back to simple console logging when running in a non-interactive shell (example: Docker container).
+
+If this is the case then you will see the following message in the log upon Opsdroid start:
+
+```
+WARNING opsdroid.logging Running in non-interactive shell - falling back to simple logging. You can override this using 'logging.config: false'
+```
+
+Specifying `logging.console` in the configuration will override this.
+
 #### Optional logging arguments
 
 You can pass optional arguments to the logging configuration to extend the opsdroid logging.
 
+##### Logs timestamp
+
+Sometimes it is helpful to have the timestamp when logs happen. You can enable them with the `timestamp` boolean. Defaults to false
+
+```yaml
+logging:
+  level: info
+  timestamp: true
+```
+
+_example:_
+
+```shell
+2020-12-02 10:39:51,255 INFO opsdroid.logging: ========================================
+2020-12-02 10:39:51,255 INFO opsdroid.logging: Started opsdroid v0.19.0+66.g8b839bc.dirty.
+2020-12-02 10:39:51,255 INFO opsdroid: ========================================
+```
+
 ##### Logs rotation
-To keep the logs under control the file will grow to 50MB before being rotated back. You can change the default value by passing the `file-size` argument.
+
+To keep the logs under control, the file will grow to 50MB before being rotated back. You can change the default value by passing the `file-size` argument.
 
 ```yaml
 logging:
@@ -213,7 +248,8 @@ logging:
   extended: true
 ```
 
-*example:*
+_example:_
+
 ```shell
 INFO opsdroid.logging.configure_logging(): ========================================
 INFO opsdroid.logging.configure_logging(): Started opsdroid v0.14.1
@@ -234,7 +270,8 @@ logging:
       - "opsdroid.logging"
 ```
 
-*example:*
+_example:_
+
 ```shell
 DEBUG opsdroid.core: Loaded 5 skills
 DEBUG opsdroid.core: Adding database: DatabaseSqlite
@@ -245,6 +282,7 @@ _Note: You can also use the extended mode to filter out logs - this should allow
 ##### Blacklist log names
 
 If you want to get logs from all the files but one, you can choose a file to blacklist and opsdroid will filter that result from the logs. This is particularly important if you have huge objects inside your database.
+
 ```yaml
 logging:
   level: info
@@ -256,7 +294,8 @@ logging:
       - "aiosqlite"
 ```
 
-*example:*
+_example:_
+
 ```shell
 INFO opsdroid.logging: ========================================
 INFO opsdroid.logging: Started opsdroid v0.14.1+93.g3513177.dirty
@@ -286,6 +325,7 @@ INFO opsdroid.web: Started web server on http://0.0.0.0:8080
 _Note: You can also use the extended mode to filter out logs - this should allow you to have even more flexibility while dealing with your logs._
 
 ##### Using both whitelist and blacklist filter
+
 You are only able to filter either with the whitelist filter or the blacklist filter. If you add both in your configuration file, you will get a warning
 and only the whitelist filter will be used. This behaviour was done because setting two filters causes an `RuntimeError` to be raised (_maximum recursion depth exceeded_).
 
@@ -318,6 +358,35 @@ INFO opsdroid.core: Opsdroid is now running, press ctrl+c to exit.
 INFO opsdroid.web: Started web server on http://0.0.0.0:8080
 ```
 
+##### Logs formatter
+
+You can create your formatter string to pass to the logs. This option will give you more flexibility and get logs in your prefered format. Note that this option only works if you set `console: true` since rich logging will have its own
+formatter.
+
+```yaml
+logging:
+  level: info
+  console: true
+  formatter: "%(name)s %(levelname)s - %(message)s"
+```
+
+###### Example
+
+```shell
+opsdroid.logging INFO - ========================================
+opsdroid.logging INFO - Started opsdroid v0.8.1+976.g150b605.dirty.
+opsdroid INFO - ========================================
+opsdroid INFO - You can customise your opsdroid by modifying your configuration.yaml.
+opsdroid INFO - Read more at: http://opsdroid.readthedocs.io/#configuration
+opsdroid INFO - Watch the Get Started Videos at: http://bit.ly/2fnC0Fh
+opsdroid INFO - Install Opsdroid Desktop at:
+https://github.com/opsdroid/opsdroid-desktop/releases
+opsdroid INFO - ========================================
+opsdroid.loader WARNING - No databases in configuration. This will cause skills which store things in memory to lose data when opsdroid is restarted.
+opsdroid.core INFO - Opsdroid is now running, press ctrl+c to exit.
+opsdroid.web INFO - Started web server on http://0.0.0.0:8080
+```
+
 ### Installation Path
 
 Set the path for opsdroid to use when installing skills. Defaults to the current working directory.
@@ -344,12 +413,13 @@ parsers:
   regex:
     enabled: true
 
-# NLU parser
+  # NLU parser
   rasanlu:
     url: http://localhost:5000
     project: opsdroid
     token: 85769fjoso084jd
     min-score: 0.8
+    train: True
 ```
 
 Some parsers will allow you to specify a min-score to tell opsdroid to ignore any matches which score less than a given number between 0 and 1. You just need to add the required min-score under a parser in the configuration.yaml file.
@@ -377,7 +447,7 @@ Configure the timezone.
 This timezone will be used in crontab skills if the timezone has not been set as a kwarg in the crontab decorator. All [timezone names](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) from the [tz database](https://www.iana.org/time-zones) are valid here.
 
 ```yaml
-timezone: 'Europe/London'
+timezone: "Europe/London"
 ```
 
 ### Language
@@ -400,24 +470,38 @@ By default, opsdroid will start a web server on port `8080` (or `8443` if SSL de
 
 ```yaml
 web:
-  host: '0.0.0.0'
+  host: "0.0.0.0"
   port: 8080
   ssl:
     cert: /path/to/cert.pem
     key: /path/to/key.pem
 ```
 
+#### CORS
+
+By default, opsdroid handles CORS requests insecurely. This means that every request will be accepted. You can configure CORS by using the following configuration:
+
+```yaml
+web:
+  cors:
+    allow-all: false
+    origins:
+      - http://localhost:3000
+    allow-headers:
+      - X-Token
+```
+(module-options)=
 ## Module options
 
 ### Install Location
 
-Modules in opsdroid can be installed in a variety of ways. By default, if no additional options are specified opsdroid will first look to see if the module is built in to opsdroid's core library and then it will look for the repository at `https://github.com/opsdroid/<moduletype>-<modulename>.git`.
+Modules in opsdroid can be installed in a variety of ways. By default, if no additional options are specified, opsdroid will first look to see if the module is built into opsdroid's core library and then look for the repository https://github.com/opsdroid/<moduletype>-<modulename>.git`.
 
 However, if you wish to install a module from a different location you can specify one of the following options.
 
 #### Git Repository
 
-A git URL to install the module from.
+A git URL to install the module.
 
 ```yaml
 connectors:
@@ -431,7 +515,7 @@ _Note: When using a git repository, opsdroid will try to update it at startup pu
 
 #### Local Directory
 
-A local path to install the module from.
+A local path to install the module.
 
 ```yaml
 skills:
@@ -457,30 +541,30 @@ skills:
 
 #### GitHub Gist
 
-A gist URL to download and install the module from. This downloads the gist
-to a temporary file and then uses the single file local installer above. Therefore
+A gist URL to download and install the module. This downloads the gist
+to a temporary file and then uses the single-file local installer above. Therefore
 Notebooks are also supported.
 
 ```yaml
 skills:
- ping:
-   gist: https://gist.github.com/jacobtomlinson/6dd35e0f62d6b779d3d0d140f338d3e5
+  ping:
+    gist: https://gist.github.com/jacobtomlinson/6dd35e0f62d6b779d3d0d140f338d3e5
 ```
 
 Or you can specify the Gist ID without the full URL.
 
 ```yaml
 skills:
- ping:
-   gist: 6dd35e0f62d6b779d3d0d140f338d3e5
+  ping:
+    gist: 6dd35e0f62d6b779d3d0d140f338d3e5
 ```
 
-You can also directly specify the module name to import which skips all of the opsdroid module generation.
+You can also directly specify the module name to import, which skips all of the opsdroid module generation.
 
 ```yaml
 skills:
- ping:
-   module: 'module.to.import'
+  ping:
+    module: "module.to.import"
 ```
 
 ### Disable Caching
@@ -503,10 +587,10 @@ Set `no-dep` to true to skip the installation of dependencies on every start of 
 skills:
   myawesomeskill:
     no-cache: true
-    no-deps: true
+    no-dep: true
 ```
 
-_Note: This might be useful when you are developing a skill and already have the dependencies installed._
+_Note: This might be useful when developing a skill and already have the dependencies installed._
 
 ## Environment variables
 
@@ -518,7 +602,7 @@ skills:
     somekey: $ENVIRONMENT_VARIABLE
 ```
 
-_Note: Your environment variable names must consist of uppercase characters and underscores only. The value must also be just the environment variable, you cannot currently mix env vars inside strings._
+_Note: Your environment variable names must consist of uppercase characters and underscores only. The value must also be just the environment variable. You cannot currently mix env vars inside strings._
 
 ## Validating modules
 
@@ -531,14 +615,14 @@ _Note: If the validation fails, opsdroid will exit with error code 1._
 
 You can add rules to your custom made modules by setting the constant variable and adding rules to it. The `CONFIG_SCHEMA` variable needs to be a dictionary where you pass expected arguments and type.
 
-To validate a module/configuration, we use the _voluptuous_ dependency, that means that you need to follow certain patterns expected by the dependency.
+To validate a module/configuration, we use the _voluptuous_ dependency, which means you need to follow specific patterns expected by the dependency.
 
 - Required values need to be set with `voluptuous.Required()`
 - Optional values can be set with or without `voluptuous.Optional()`
 
 ### Example
 
-Let's take the example of our matrix connector. Inside the module we set the const `CONFIG_SCHEMA` with some rules:
+Let's take the example of our matrix connector. Inside the module, we set the const `CONFIG_SCHEMA` with some rules:
 
 ```python
 from voluptuous import Required
@@ -550,12 +634,15 @@ CONFIG_SCHEMA = {
     "homeserver": str,
     "nick": str,
     "room_specific_nicks": bool,
+    "device_name": str,
+    "device_id": str,
+    "store_path": str,
 }
 ```
 
 As you can see `mxid`, `password` and `rooms` are required fields for this connector and we expect them to be either strings or a dictionary.
 
-Since we don't need to explicitly declare a value as Optional we can just write the expected value and type.
+Since we don't need to declare a value as Optional explicitly, we can write the expected value and type.
 
 _Note: If a module doesn't contain the const variable, the module will be loaded anyway and should handle any potential errors found in the configuration._
 
@@ -565,11 +652,11 @@ If you need to use a HTTP proxy, set the HTTP_PROXY and HTTPS_PROXY environment 
 
 ## Migrate to new configuration layout
 
-Since version 0.17.0 came out we have migrated to a new configuration layout. We will check your configuration and give you a deprecation warning if your configuration is using the old layout.
+Since version 0.17.0 came out we have migrated to a new configuration layout. We will check your configuration and give you a deprecation warning if your configuration uses the old layout.
 
 ### What changed
 
-We have dropped the pattern `- name:  <module name>`  and replaced it with the pattern `<module name>: {}` or `<module name>:` followed by a blank line underneath.
+We have dropped the pattern `- name: <module name>` and replaced it with the pattern `<module name>: {}` or `<module name>:` followed by a blank line underneath.
 
 This change makes sure we stop using lists containing dictionaries that carry the configuration for each module. In the new layout, we replace lists with a dictionary that uses the name of a module for a key and the additional configuration parameters inside a dictionary as a key.
 
@@ -597,4 +684,4 @@ Which would be represented in a dictionary format like this:
 
 You can have a look at the [example configuration file](https://github.com/opsdroid/opsdroid/blob/master/opsdroid/configuration/example_configuration.yaml) for a better grasp of the new layout.
 
-If you need help migrating your configuration to the new layout please get in touch with us on the [official matrix channel](https://riot.im/app/#/room/#opsdroid-general:matrix.org).
+If you need help migrating your configuration to the new layout please get in touch with us on the [official matrix channel](https://app.element.io/#/room/#opsdroid-general:matrix.org).

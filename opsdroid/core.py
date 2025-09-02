@@ -1,37 +1,45 @@
 """Core components of OpsDroid."""
 
+import asyncio
+import anyio
+import contextlib
 import copy
+import inspect
 import logging
 import os
 import signal
 import sys
+import warnings
 import weakref
-import asyncio
-import contextlib
-import inspect
-from watchgod import awatch, PythonWatcher
+
+from watchgod import PythonWatcher, awatch
 
 from opsdroid import events
-from opsdroid.const import DEFAULT_CONFIG_LOCATIONS
-from opsdroid.memory import Memory
-from opsdroid.connector import Connector
 from opsdroid.configuration import load_config_file
+from opsdroid.connector import Connector
+from opsdroid.const import DEFAULT_CONFIG_LOCATIONS
 from opsdroid.database import Database, InMemoryDatabase
-from opsdroid.skill import Skill
+from opsdroid.helper import get_parser_config
 from opsdroid.loader import Loader
-from opsdroid.web import Web
+from opsdroid.memory import Memory
 from opsdroid.parsers.always import parse_always
-from opsdroid.parsers.event_type import parse_event_type
-from opsdroid.parsers.regex import parse_regex
-from opsdroid.parsers.parseformat import parse_format
-from opsdroid.parsers.dialogflow import parse_dialogflow
-from opsdroid.parsers.luisai import parse_luisai
-from opsdroid.parsers.sapcai import parse_sapcai
-from opsdroid.parsers.witai import parse_witai
-from opsdroid.parsers.watson import parse_watson
-from opsdroid.parsers.rasanlu import parse_rasanlu, train_rasanlu
+from opsdroid.parsers.catchall import parse_catchall
 from opsdroid.parsers.crontab import parse_crontab
-
+from opsdroid.parsers.dialogflow import parse_dialogflow
+from opsdroid.parsers.event_type import parse_event_type
+from opsdroid.parsers.luisai import parse_luisai
+from opsdroid.parsers.parseformat import parse_format
+from opsdroid.parsers.rasanlu import (
+    parse_rasanlu,
+    train_rasanlu,
+    rasa_usable,
+)
+from opsdroid.parsers.regex import parse_regex
+from opsdroid.parsers.sapcai import parse_sapcai
+from opsdroid.parsers.watson import parse_watson
+from opsdroid.parsers.witai import parse_witai
+from opsdroid.skill import Skill
+from opsdroid.web import Web
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,24 +52,29 @@ class OpsDroid:
 
     instances = []
 
-    def __init__(self, config=None, config_path=None):
+    def __init__(self, config=None, config_path=None, loopless=False):
         """Start opsdroid."""
         self.bot_name = "opsdroid"
         self._running = False
         self.sys_status = 0
         self.connectors = []
-        self.connector_tasks = []
-        self.eventloop = asyncio.get_event_loop()
-        if os.name != "nt":
-            for sig in (signal.SIGINT, signal.SIGTERM):
+        if loopless:
+            self.eventloop = None
+        else:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            self.eventloop = asyncio.get_event_loop()
+            if os.name != "nt":
+                for sig in (signal.SIGINT, signal.SIGTERM):
+                    self.eventloop.add_signal_handler(
+                        sig, lambda: asyncio.ensure_future(self.handle_stop_signal())
+                    )
                 self.eventloop.add_signal_handler(
-                    sig, lambda: asyncio.ensure_future(self.handle_signal())
+                    signal.SIGHUP, lambda: asyncio.ensure_future(self.reload())
                 )
-        self.eventloop.set_exception_handler(self.handle_async_exception)
+                self.eventloop.set_exception_handler(self.handle_async_exception)
         self.skills = []
         self.memory = Memory()
         self.modules = {}
-        self.cron_task = None
         self.loader = Loader(self)
         self.config_path = config_path if config_path else DEFAULT_CONFIG_LOCATIONS
         if config is None:
@@ -77,7 +90,7 @@ class OpsDroid:
         self.web_server = None
         self.stored_path = []
         self.reload_paths = []
-        self.path_watch_task = None
+        self.tasks = []
 
     def __enter__(self):
         """Add self to existing instances."""
@@ -139,34 +152,36 @@ class OpsDroid:
             context (String): Describes the exception encountered.
 
         """
-        print("ERROR: Unhandled exception in opsdroid, exiting...")
+        warnings.warn(
+            "ERROR: Unhandled exception in opsdroid, exiting...", stacklevel=2
+        )
         if "future" in context:
             try:  # pragma: nocover
                 context["future"].result()
             # pylint: disable=broad-except
-            except Exception:  # pragma: nocover
-                print("Caught exception")
-                print(context)
+            except Exception as e:  # pragma: nocover
+                warnings.warn("Caught exception", stacklevel=2, source=e)
+        warnings.warn(context, stacklevel=2)
 
     def is_running(self):
         """Check whether opsdroid is running."""
         return self._running
 
-    async def handle_signal(self):
+    async def handle_stop_signal(self):
         """Handle signals."""
         self._running = False
+        await self.stop()
         await self.unload()
 
     def run(self):
         """Start the event loop."""
         self.sync_load()
-        _LOGGER.info(_("Opsdroid is now running, press ctrl+c to exit."))
         if not self.is_running():
+            _LOGGER.info(_("Opsdroid is now running, press ctrl+c to exit."))
             self._running = True
             while self.is_running():
-                pending = asyncio.Task.all_tasks()
                 with contextlib.suppress(asyncio.CancelledError):
-                    self.eventloop.run_until_complete(asyncio.gather(*pending))
+                    self.eventloop.run_until_complete(self.start())
 
             self.eventloop.stop()
             self.eventloop.close()
@@ -176,71 +191,95 @@ class OpsDroid:
         else:
             _LOGGER.error(_("Oops! Opsdroid is already running."))
 
+    async def start(self):
+        """Create tasks and then run all created tasks concurrently."""
+        if len(self.skills) == 0:
+            self.critical(_("No skills in configuration, at least 1 required"), 1)
+
+        await self.start_databases()
+        await self.start_connectors()
+        self.create_task(self.watch_paths())
+        self.create_task(parse_crontab(self))
+        self.create_task(self.web_server.start())
+
+        self.create_task(self.parse(events.OpsdroidStarted()))
+
+        await self._run_tasks()
+
+    async def _run_tasks(self):
+        """
+        Run all created tasks concurrently.
+
+        This is separate from start() so that tests can run the loop without
+        creating any of the tasks.
+        """
+        self._running = True
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.gather(*self.tasks)
+        self._running = False
+
+    def create_task(self, task):
+        """Create an async task and add it to the list of tasks."""
+        self.tasks.append(self.eventloop.create_task(task))
+
     def sync_load(self):
         """Run the load modules method synchronously."""
-        self.eventloop.run_until_complete(self.load())
+        # self.eventloop.run_until_complete(self.load())
+        anyio.run(self.load)
 
-    async def load(self):
+    async def load(self, config=None):
         """Load modules."""
+        if config is not None:
+            self.config = config
         self.modules = self.loader.load_modules_from_config(self.config)
-        _LOGGER.debug(_("Loaded %i skills."), len(self.modules["skills"]))
+        _LOGGER.debug(_("Loaded %i skills."), len(self.modules["skills"] or []))
         self.web_server = Web(self)
-        await self.start_databases(self.modules["databases"])
-        await self.start_connectors(self.modules["connectors"])
         self.setup_skills(self.modules["skills"])
-        self.path_watch_task = self.eventloop.create_task(self.watch_paths())
+        await self.setup_databases(self.modules["databases"] or {})
+        await self.setup_connectors(self.modules["connectors"] or {})
         self.web_server.setup_webhooks(self.skills)
-        await self.train_parsers(self.modules["skills"])
-        self.cron_task = self.eventloop.create_task(parse_crontab(self))
-        self.eventloop.create_task(self.web_server.start())
+        await self.train_parsers(self.modules["skills"] or {})
 
-        self.eventloop.create_task(self.parse(events.OpsdroidStarted()))
-
-    async def unload(self, future=None):
-        """Stop the event loop."""
+    async def stop(self):
+        """Stop all tasks running in opsdroid."""
         _LOGGER.info(_("Received stop signal, exiting."))
-
-        _LOGGER.info(_("Removing skills..."))
-        for skill in self.skills:
-            _LOGGER.info(_("Removed %s."), skill.config["name"])
-            self.skills.remove(skill)
-        if self.path_watch_task:
-            self.path_watch_task.cancel()
 
         for connector in self.connectors:
             _LOGGER.info(_("Stopping connector %s..."), connector.name)
             await connector.disconnect()
-            self.connectors.remove(connector)
             _LOGGER.info(_("Stopped connector %s."), connector.name)
 
-        for database in self.memory.databases:
+        for database in self.memory.databases[:]:
             _LOGGER.info(_("Stopping database %s..."), database.name)
             await database.disconnect()
-            self.memory.databases.remove(database)
             _LOGGER.info(_("Stopped database %s."), database.name)
 
         _LOGGER.info(_("Stopping web server..."))
         await self.web_server.stop()
-        self.web_server = None
         _LOGGER.info(_("Stopped web server."))
 
-        _LOGGER.info(_("Stopping cron..."))
-        self.cron_task.cancel()
-        self.cron_task = None
-        _LOGGER.info(_("Stopped cron"))
-
         _LOGGER.info(_("Stopping pending tasks..."))
-        tasks = asyncio.Task.all_tasks()
-        for task in list(tasks):
-            if not task.done() and task is not asyncio.Task.current_task():
+        for task in self.tasks:
+            if not task.done() and task is not asyncio.current_task():
                 task.cancel()
         _LOGGER.info(_("Stopped pending tasks."))
 
+    async def unload(self, future=None, unload_server=True):
+        """Stop the event loop."""
+        self.skills = []
+        self.connectors = []
+        self.memory.databases = []
+        if unload_server:
+            self.web_server = None
+        self.modules = {}
+
     async def reload(self):
         """Reload opsdroid."""
+        await self.stop()
         await self.unload()
         self.config = load_config_file(self.config_path)
         await self.load()
+        await self.start()
 
     def setup_skills(self, skills):
         """Call the setup function on the loaded skills.
@@ -252,6 +291,9 @@ class OpsDroid:
             skills (list): A list of all the loaded skills.
 
         """
+        if not skills:
+            return
+
         for skill in skills:
             for func in skill["module"].__dict__.values():
                 if isinstance(func, type) and issubclass(func, Skill) and func != Skill:
@@ -270,17 +312,22 @@ class OpsDroid:
                             continue
 
                         if hasattr(method, "skill"):
-                            self.skills.append(method)
+                            self.register_skill(method)
 
                     continue
 
                 if hasattr(func, "skill"):
-                    func.config = skill["config"]
-                    self.skills.append(func)
+                    self.register_skill(func, skill["config"])
 
         with contextlib.suppress(AttributeError):
             for skill in skills:
                 skill["module"].setup(self, self.config)
+
+    def register_skill(self, skill, config=None):
+        """Register a skill callable."""
+        if config is not None:
+            skill.config = config
+        self.skills.append(skill)
 
     async def watch_paths(self):
         """Watch locally installed skill paths for file changes and reload on change.
@@ -302,7 +349,7 @@ class OpsDroid:
                 _(
                     "Watching module files for changes. "
                     "Warning autoreload is an experimental feature."
-                ),
+                )
             )
             await asyncio.gather(
                 *[watch_and_reload(self, path) for path in self.reload_paths]
@@ -315,20 +362,22 @@ class OpsDroid:
             skills (list): A list of all the loaded skills.
 
         """
-        if "parsers" in self.config:
-            parsers = self.config["parsers"] or {}
-            rasanlu = parsers.get("rasanlu")
+        if "parsers" in self.modules:
+            parsers = self.modules.get("parsers", {})
+            rasanlu = get_parser_config("rasanlu", parsers)
             if rasanlu and rasanlu["enabled"]:
+                if await rasa_usable(rasanlu) is False:
+                    self.critical(
+                        "Cannot connect to Rasa or the Rasa version is not compatible.",
+                        5,
+                    )
                 await train_rasanlu(rasanlu, skills)
 
-    async def start_connectors(self, connectors):
-        """Start the connectors.
-
-        Iterates through all the connectors parsed in the argument,
-        spawns all that can be loaded, and keeps them open (listening).
+    async def setup_connectors(self, connectors):
+        """Extract connectors from modules and register them in opsdroid.
 
         Args:
-            connectors (list): A list of all the connectors to be loaded.
+            connectors (list): A list of all the loaded connector modules.
 
         """
         for connector_module in connectors:
@@ -341,15 +390,19 @@ class OpsDroid:
                     connector = cls(connector_module["config"], self)
                     self.connectors.append(connector)
 
-        if connectors:
-            for connector in self.connectors:
-                await connector.connect()
-
-            for connector in self.connectors:
-                task = self.eventloop.create_task(connector.listen())
-                self.connector_tasks.append(task)
-        else:
+        if not self.connectors:
             self.critical("All connectors failed to load.", 1)
+
+    async def start_connectors(self):
+        """Start the connectors.
+
+        Iterates through all the connectors parsed in the argument,
+        spawns all that can be loaded, and keeps them open (listening).
+
+        """
+        await asyncio.gather(*[connector.connect() for connector in self.connectors])
+        for connector in self.connectors:
+            self.create_task(connector.listen())
 
     # pylint: disable=W0640
     @property
@@ -375,14 +428,11 @@ class OpsDroid:
 
         return names
 
-    async def start_databases(self, databases):
-        """Start the databases.
-
-        Iterates through all the database modules parsed
-        in the argument, connects and starts them.
+    async def setup_databases(self, databases):
+        """Extract database from modules and register them in opsdroid.
 
         Args:
-            databases (list): A list of all database modules to be started.
+            databases (list): A list of all the loaded database modules.
 
         """
         if not databases:
@@ -399,7 +449,17 @@ class OpsDroid:
                     _LOGGER.debug(_("Adding database: %s."), name)
                     database = cls(database_module["config"], opsdroid=self)
                     self.memory.databases.append(database)
-                    await database.connect()
+
+    async def start_databases(self):
+        """Start the databases.
+
+        Iterates through all the database modules parsed
+        in the argument, connects and starts them.
+
+        """
+        await asyncio.gather(
+            *[database.connect() for database in self.memory.databases]
+        )
 
     async def run_skill(self, skill, config, event):
         """Execute a skill.
@@ -448,38 +508,38 @@ class OpsDroid:
             ranked_skills += await parse_regex(self, skills, message)
             ranked_skills += await parse_format(self, skills, message)
 
-        if "parsers" in self.config:
+        if "parsers" in self.modules:
             _LOGGER.debug(_("Processing parsers..."))
-            parsers = self.config["parsers"] or {}
+            parsers = self.modules.get("parsers", {})
 
-            dialogflow = parsers.get("dialogflow")
+            dialogflow = get_parser_config("dialogflow", parsers)
             if dialogflow and dialogflow["enabled"]:
                 _LOGGER.debug(_("Checking dialogflow..."))
                 ranked_skills += await parse_dialogflow(
                     self, skills, message, dialogflow
                 )
 
-            luisai = parsers.get("luisai")
+            luisai = get_parser_config("luisai", parsers)
             if luisai and luisai["enabled"]:
                 _LOGGER.debug(_("Checking luisai..."))
                 ranked_skills += await parse_luisai(self, skills, message, luisai)
 
-            sapcai = parsers.get("sapcai")
+            sapcai = get_parser_config("sapcai", parsers)
             if sapcai and sapcai["enabled"]:
                 _LOGGER.debug(_("Checking SAPCAI..."))
                 ranked_skills += await parse_sapcai(self, skills, message, sapcai)
 
-            witai = parsers.get("witai")
+            witai = get_parser_config("witai", parsers)
             if witai and witai["enabled"]:
                 _LOGGER.debug(_("Checking wit.ai..."))
                 ranked_skills += await parse_witai(self, skills, message, witai)
 
-            watson = parsers.get("watson")
+            watson = get_parser_config("watson", parsers)
             if watson and watson["enabled"]:
                 _LOGGER.debug(_("Checking IBM Watson..."))
                 ranked_skills += await parse_watson(self, skills, message, watson)
 
-            rasanlu = parsers.get("rasanlu")
+            rasanlu = get_parser_config("rasanlu", parsers)
             if rasanlu and rasanlu["enabled"]:
                 _LOGGER.debug(_("Checking Rasa NLU..."))
                 ranked_skills += await parse_rasanlu(self, skills, message, rasanlu)
@@ -524,6 +584,27 @@ class OpsDroid:
             ]
             return database
         except ValueError:
+            return None
+
+    def get_skill_instance(self, skill):
+        """Get the parent instance of a skill.
+
+        Skills in opsdroid are functions or bound methods of a class instance. For class based skills
+        sometimes you may want to get the instance of the class the method is bound to. This helper
+        will retrieve the instance for a method skill.
+
+        Args:
+            skill: The skill we want to get the instance for.
+
+        Returns:
+            The instance of the class or ``None`` if the skill is a function skill
+
+        """
+        while hasattr(skill, "__wrapped__"):
+            skill = skill.__wrapped__
+        if hasattr(skill, "__self__"):
+            return skill.__self__
+        else:
             return None
 
     async def _constrain_skills(self, skills, message):
@@ -573,7 +654,8 @@ class OpsDroid:
                         )
                     )
                 )
-
+        if len(tasks) == 2:  # no other skills ran other than 2 default ones
+            tasks.append(self.eventloop.create_task(parse_catchall(self, event)))
         await asyncio.gather(*tasks)
 
         return tasks

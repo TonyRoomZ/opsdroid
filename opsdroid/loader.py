@@ -14,23 +14,22 @@ import sys
 import tempfile
 import urllib.request
 from collections.abc import Mapping
-from pkg_resources import iter_entry_points
 
-from opsdroid.helper import (
-    file_is_ipython_notebook,
-    convert_ipynb_to_script,
-    extract_gist_id,
-)
+from pkg_resources import iter_entry_points
 
 from opsdroid.configuration import validate_configuration
 from opsdroid.const import (
     DEFAULT_GIT_URL,
-    MODULES_DIRECTORY,
-    DEFAULT_MODULES_PATH,
     DEFAULT_MODULE_BRANCH,
     DEFAULT_MODULE_DEPS_PATH,
+    DEFAULT_MODULES_PATH,
+    MODULES_DIRECTORY,
 )
-
+from opsdroid.helper import (
+    convert_ipynb_to_script,
+    extract_gist_id,
+    file_is_ipython_notebook,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -92,12 +91,18 @@ class Loader:
             config["module_path"] + "." + config["name"],
             config["module_path"],
         ]
+
         for namespace in namespaces:
             try:
                 module_spec = importlib.util.find_spec(namespace)
                 if module_spec:
                     break
-            except (ImportError, AttributeError):
+            except (ImportError, AttributeError, ValueError) as e:
+                _LOGGER.debug(
+                    _(
+                        f"Unable to import {namespace} from {namespaces} - Reason: {str(e)}"
+                    )
+                )
                 continue
 
         if module_spec:
@@ -363,11 +368,6 @@ class Loader:
         if "skills" in config.keys() and config["skills"]:
             skills = self._load_modules("skill", config["skills"])
 
-        else:
-            self.opsdroid.critical(
-                _("No skills in configuration, at least 1 required"), 1
-            )
-
         if "connectors" in config.keys() and config["connectors"]:
             connectors = self._load_modules("connector", config["connectors"])
         else:
@@ -420,12 +420,12 @@ class Loader:
             config.update(modules.get(module))
 
         config["type"] = modules_type
-        config["enabled"] = True
+        if config.get("enabled") is not False:
+            config["enabled"] = True
         config["entrypoint"] = entry_points.get(config["name"], None)
         config["is_builtin"] = self.is_builtin_module(config)
         config["module_path"] = self.build_module_import_path(config)
         config["install_path"] = self.build_module_install_path(config)
-
         if "branch" not in config:
             config["branch"] = DEFAULT_MODULE_BRANCH
 

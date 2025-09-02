@@ -1,26 +1,25 @@
 """Utilities for the opsdroid CLI commands."""
 
-import click
 import contextlib
 import gettext
-import os
 import logging
+import os
 import subprocess
-import sys
 import time
+import platform
 
-from opsdroid.core import OpsDroid
+import click
 from opsdroid.configuration import load_config_file
 from opsdroid.const import (
-    LOCALE_DIR,
-    DEFAULT_LANGUAGE,
-    DEFAULT_CONFIG_PATH,
     DEFAULT_CONFIG_LOCATIONS,
+    DEFAULT_CONFIG_PATH,
+    DEFAULT_LANGUAGE,
+    LOCALE_DIR,
 )
+from opsdroid.core import OpsDroid
 from opsdroid.helper import get_config_option
 from opsdroid.loader import Loader
 from opsdroid.logging import configure_logging
-
 
 _LOGGER = logging.getLogger("opsdroid")
 
@@ -45,7 +44,9 @@ def edit_config(ctx, path):
 
     """
     file = path or DEFAULT_CONFIG_PATH
-    editor = os.environ.get("EDITOR", "vi")
+    editor = os.environ.get(
+        "EDITOR", "notepad.exe" if platform.system() == "Windows" else "vi"
+    )
 
     if editor == "vi":
         click.echo(
@@ -81,7 +82,8 @@ def validate_config(ctx, path):
         int: the exit code. Always returns 0 in this case.
 
     """
-    with OpsDroid() as opsdroid:
+    # We're just loading stuff, avoid loop initialization
+    with OpsDroid(loopless=True) as opsdroid:
         loader = Loader(opsdroid)
 
         config = load_config_file([path] if path else DEFAULT_CONFIG_LOCATIONS)
@@ -105,19 +107,6 @@ def configure_lang(config):
     if lang_code != DEFAULT_LANGUAGE:
         lang = gettext.translation("opsdroid", LOCALE_DIR, (lang_code,), fallback=True)
         lang.install()
-
-
-def check_dependencies():
-    """Check for system dependencies required by opsdroid.
-
-    Returns:
-        int: the exit code. Returns 1 if the Python version installed is
-        below 3.6.
-
-    """
-    if sys.version_info.major < 3 or sys.version_info.minor < 6:
-        logging.critical(_("Whoops! opsdroid requires python 3.6 or above."))
-        sys.exit(1)
 
 
 def welcome_message(config):
@@ -223,13 +212,12 @@ def build_config(ctx, params):
     path = params.get("path")
 
     with contextlib.suppress(Exception):
-        check_dependencies()
 
         config = load_config_file([path] if path else DEFAULT_CONFIG_LOCATIONS)
 
         if params["verbose"]:
             config["logging"] = {"level": "debug"}
-            configure_logging(config)
+            configure_logging(config["logging"])
 
         with OpsDroid(config=config) as opsdroid:
 

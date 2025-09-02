@@ -36,15 +36,12 @@ class TestConfiguration(unittest.TestCase):
         shutil.rmtree(self._tmp_dir, onerror=del_rw)
 
     def test_schema(self):
-        skill_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "mockmodules/skills/schema_skill",
-        )
+        skill_path = "opsdroid/testing/mockmodules/skills/schema_skill"
         example_config = {
             "connectors": {"websocket": {}},
             "skills": {"test": {"path": skill_path}},
         }
-        with OpsDroid(config=example_config) as opsdroid:
+        with OpsDroid(config=example_config, loopless=True) as opsdroid:
             opsdroid.sync_load()
             assert opsdroid.skills
             assert len(opsdroid.skills) == 1

@@ -21,8 +21,16 @@ connectors:
     # Optional
     scheme: "http" # default: https
     port: 8065 # default: 8065
-    ssl-verify: false # default: true
     connect-timeout: 30 # default: 30
+
+    # OpsDroid should always respond in a thread:
+    use-threads: True # default: False
+
+    # OpsDroid should parse messages that have received this emoji
+    emoji-trigger: "opsdroid-emoji" # default: None
+
+    # OpsDroid should only parse messages in channels if the bot is being tagged directly; direct messages between you and the bot always ignore this and OpsDroid will always respond
+    trigger-on-mention: True # default: True
 ```
 
 ## Usage
@@ -44,3 +52,5 @@ hi
 opsdroid APP [9:06 PM]
 Hi daniccan
 ```
+
+The connector doesn't parse messages that have been posted by the bot itself.

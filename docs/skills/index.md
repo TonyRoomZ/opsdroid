@@ -24,12 +24,11 @@ For more information about the different decorators available in opsdroid see th
 
 If a message is received and matches the regular expression then the decorated function is called. As arguments opsdroid will pass a Message event object containing information about the message from the user.
 
-```eval_rst
-.. note::
-   All functions which will be executed should be defined as an `async` function, and calls to functions which may require IO (like a connector or database) should be awaited with the `await` keyword. For more information see [asyncio](https://docs.python.org/3/library/asyncio.html) and [event loops](https://docs.python.org/3/library/asyncio-eventloop.html).
+```{note}
+All functions which will be executed should be defined as an `async` function, and calls to functions which may require IO (like a connector or database) should be awaited with the `await` keyword. For more information see [asyncio](https://docs.python.org/3/library/asyncio.html) and [event loops](https://docs.python.org/3/library/asyncio-eventloop.html).
 ```
 
-To configure opsdroid to use your skill you need to add an entry to the `skills` section of your [configuration](../configuration) with the path to your skill file or folder.
+To configure opsdroid to use your skill you need to add an entry to the `skills` section of your [configuration](../configuration.md) with the path to your skill file or folder.
 
 ```yaml
 skills:
@@ -39,7 +38,7 @@ skills:
     # with an __init__.py file in it
 ```
 
-For more information about the various ways you can package skills and other modules and tell opsdroid about them see the [packaging section](../packaging).
+For more information about the various ways you can package skills and other modules and tell opsdroid about them see the [packaging section](../packaging.md).
 
 It is also possible to specify your expected configuration schema by setting the `CONFIG_SCHEMA` constant within your skill. We use the [voluptuous](https://github.com/alecthomas/voluptuous) library for validating configuration.
 
@@ -57,55 +56,50 @@ By adding this to the top of your skill you are specifying that you expect the u
 
 Opsdroid contains a variety of matchers you can use to make use of advanced parsing services such as natural language understanding APIs or non-chat events such as cron based scheduled tasks or webhooks.
 
-```eval_rst
-.. toctree::
-   :maxdepth: 2
+```{toctree}
+:maxdepth: 2
 
-   matchers/index
+matchers/index
 ```
 
 ## Constraints
 
 You can also limit how opsdroid matches your skill using constraints. These are like filters for your skills which allow you to say match my skill unless this case is true.
 
-```eval_rst
-.. toctree::
-   :maxdepth: 2
+```{toctree}
+:maxdepth: 2
 
-   constraints
+constraints
 ```
 
 ## Events
 
 There are many types of events available in opsdroid other than just chat messages. You can trigger skills when new users join a room, when someone is typing, or if someone uploads an image. You can also respond with event types other than chat messages, for example you may want to send an [emoji reaction](https://slack.com/intl/en-gb/help/articles/206870317-use-emoji-reactions) instead.
 
-```eval_rst
-.. toctree::
-   :maxdepth: 2
+```{toctree}
+:maxdepth: 2
 
-   events
+events
 ```
 
 ## Memory
 
 Sometimes you might want to persist information outside of your skill so that it is available after you restart opsdroid. To do this you can use the memory feature in opsdroid to store things in an external database.
 
-```eval_rst
-.. toctree::
-   :maxdepth: 2
+```{toctree}
+:maxdepth: 2
 
-   memory
+memory
 ```
 
 ## Start up tasks
 
 You can also specify code to run when your skill is loaded. Perhaps you want to instantiate an API module which will be used by your skills.
 
-```eval_rst
-.. toctree::
-   :maxdepth: 2
+```{toctree}
+:maxdepth: 2
 
-   setup
+setup
 ```
 
 ## Helper functions
@@ -129,6 +123,6 @@ If you try to access a connector or database which has not been configured these
 
 ## Examples
 
-For examples of the kind of skills you can build in opsdroid see the [examples section](../examples/index). Or continue reading about more of the features you can use to create your skills.
+For examples of the kind of skills you can build in opsdroid see the [examples section](../examples/index.md). Or continue reading about more of the features you can use to create your skills.
 
-_If you need help or if you are unsure about something join our_ [matrix channel](https://riot.im/app/#/room/#opsdroid-general:matrix.org) _and ask away! We are more than happy to help you._
+_If you need help or if you are unsure about something join our_ [matrix channel](https://app.element.io/#/room/#opsdroid-general:matrix.org) _and ask away! We are more than happy to help you._

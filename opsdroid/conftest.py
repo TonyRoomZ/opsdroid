@@ -1,15 +1,11 @@
-"""Pytest config for all opsdroid tests."""
-import pytest
+"""Pytest config for all opsdroid tests.
 
-from opsdroid.core import OpsDroid
+This file includes definitions for any private (opsdroid-use-only) fixtures.
+All public fixtures should be defined in ``opsdroid.testing.fixtures``
+so that sub-projects can reuse them.
+"""
+from opsdroid.testing.fixtures import *  # noqa
 
+from opsdroid.cli.start import configure_lang
 
-@pytest.fixture
-def opsdroid():
-    """Fixture with a plain instance of opsdroid.
-
-    Will yield an instance of opsdroid which hasn't been loaded.
-
-    """
-    with OpsDroid(config={}) as opsdroid:
-        yield opsdroid
+configure_lang({})
